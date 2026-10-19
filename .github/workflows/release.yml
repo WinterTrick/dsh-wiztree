@@ -1,26 +1,23 @@
 name: release
 
-# Push a tag such as v1.0.0 to validate, pack, publish to npm (when NPM_TOKEN is
-# configured), and attach the tarball to a GitHub Release.
+# Push a tag such as v1.0.0 to validate, pack, and attach the tarball to a
+# GitHub Release. Distribution is GitHub-only: this project is not published
+# to npm.
 on:
   push:
     tags: ['v*']
 
 permissions:
   contents: write
-  id-token: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    env:
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
       - name: Validate bundle
         run: npm run check
       - name: Pack
@@ -29,10 +26,6 @@ jobs:
         # A version-free name keeps `releases/latest/download/dsh-wiztree.tgz`
         # valid across releases; the versioned copy is for pinned links.
         run: cp dsh-wiztree-*.tgz dsh-wiztree.tgz
-      - name: Publish to npm
-        # Skipped when the repository has no NPM_TOKEN secret.
-        if: env.NODE_AUTH_TOKEN != ''
-        run: npm publish --access public --provenance
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
