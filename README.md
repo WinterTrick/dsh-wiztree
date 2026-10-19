@@ -15,19 +15,7 @@
 
 需要 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 0.2.1 或更新版本，以及本机安装的 WizTree（默认路径 `G:\Wiztree\WizTree64.exe`）。
 
-### 从 npm 安装
-
-```sh
-dsh plugin --profile desktop add dsh-wiztree
-```
-
-或者在会话里让智能体执行：
-
-```
-plugin_manager { action: "install_bundle", target: "dsh-wiztree" }
-```
-
-### 直接从 GitHub 安装
+### 从 GitHub 安装
 
 ```sh
 dsh plugin --profile desktop add https://github.com/WinterTrick/dsh-wiztree
@@ -141,29 +129,6 @@ npm pack --dry-run # 只看将要打包的文件
 - `src/format.js` — 大小/路径/glob 辅助
 - `scripts/check.mjs` — 发布前校验
 - `locale/*.json`、`icon.svg` — Plugin Manager 中显示的标题、描述与图标
-
-## 发布
-
-1. 更新 `package.json` 的 `version`，并在 `CHANGELOG.md` 写下该版本条目。
-2. `npm run check && npm pack --dry-run` 确认产物。
-3. 提交并打 tag：`git tag v1.0.0 && git push origin main --tags`。
-4. `.github/workflows/release.yml` 会校验、打包、创建 GitHub Release；若仓库配置了 `NPM_TOKEN` secret，还会自动发布到 npm。
-5. 可选：收录到 DSH 插件市场，见下。
-
-### 收录到 DSH 插件市场
-
-发布后向 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) 提 PR，新增一个 `data/plugins/<owner>__<repo>.yml`：
-
-```yaml
-url: https://github.com/<owner>/dsh-wiztree
-name: <owner>/dsh-wiztree
-category: tools
-description:
-  en: Index a Windows drive or folder with WizTree and answer disk-usage questions from the cached index.
-  zh: 调用 WizTree 索引 Windows 磁盘或文件夹，并在缓存索引上查询磁盘占用。
-```
-
-要求：仓库 `package.json` 声明 `dsh.bundle`（本项目已有）、仓库创建满 1 天、添加 `dsh-plugin` topic。发布到 npm 的插件安装体验最好（免构建授权）；也可以把 Release 里的 `https://github.com/<owner>/dsh-wiztree/releases/latest/download/dsh-wiztree.tgz` 填到条目的 `tarball:` 字段。
 
 ## 安全与隐私
 
