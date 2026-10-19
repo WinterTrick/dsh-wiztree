@@ -12,3 +12,11 @@
         # unlock the fast MFT scan) or set this to "never".
         elevation: auto
         admin: true
+        # Refuse to launch (elevated) unless WizTree's Authenticode signature is
+        # valid and signed by this publisher; guards against a replaced binary
+        # in a user-writable install folder.
+        verifySignature: true
+        signaturePublisher: Antibody Software
+        # Optional scan-scope limits for the model's `path` argument:
+        # allowRoots: ['D:\\']
+        # denyRoots: ['C:\\Windows\\']

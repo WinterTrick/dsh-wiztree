@@ -183,6 +183,60 @@ export function detectElevation() {
   return elevationProbe
 }
 
+/** Cached Authenticode verdicts, keyed by executable fingerprint. */
+const signatureVerdicts = new Map()
+
+/** How many executable fingerprints keep a cached verdict. */
+const SIGNATURE_CACHE_LIMIT = 32
+
+/**
+ * Ask Windows for the Authenticode verdict of one executable. This runs in the
+ * current (non-elevated) context before any elevated launch, so a replaced or
+ * unsigned binary is refused instead of being run as administrator.
+ * @param {string} executable - absolute path of the file to check.
+ * @returns {Promise<{ status: string, subject?: string, error?: string }>} the verdict.
+ */
+export function probeSignature(executable) {
+  const script = [
+    '$ErrorActionPreference = "Stop"',
+    `$signature = Get-AuthenticodeSignature -LiteralPath ${quotePowerShell(executable)}`,
+    '[Console]::Out.WriteLine($signature.Status)',
+    'if ($null -ne $signature.SignerCertificate) { [Console]::Out.WriteLine($signature.SignerCertificate.Subject) }',
+  ].join('\n')
+  const encoded = Buffer.from(script, 'utf16le').toString('base64')
+  const powershell = existsSync(POWERSHELL) ? POWERSHELL : 'powershell.exe'
+  return new Promise((resolve) => {
+    let child
+    try {
+      child = spawn(powershell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+    } catch (error) {
+      resolve({ status: 'Unavailable', error: /** @type {Error} */ (error).message })
+      return
+    }
+    let output = ''
+    let errors = ''
+    const timer = setTimeout(() => {
+      try { child.kill() } catch {}
+      resolve({ status: 'Timeout' })
+    }, 15_000)
+    timer.unref?.()
+    child.stdout?.on('data', (chunk) => { output += String(chunk) })
+    child.stderr?.on('data', (chunk) => { errors += String(chunk) })
+    child.on('error', (error) => {
+      clearTimeout(timer)
+      resolve({ status: 'Unavailable', error: error.message })
+    })
+    child.on('close', () => {
+      clearTimeout(timer)
+      const lines = output.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== '')
+      resolve({ status: lines[0] ?? 'Unavailable', subject: lines[1], error: errors.trim() || undefined })
+    })
+  })
+}
+
 export class WizTreeRunner {
   /**
    * @param {import('./config.js').ResolvedConfig} config - resolved plugin config.
@@ -205,6 +259,41 @@ export class WizTreeRunner {
         + 'Set `executable` in the plugin config (the `wiztree` row) to the installed WizTree64.exe path.',
       )
     }
+  }
+
+  /**
+   * Verify the configured executable's Authenticode signature before any
+   * launch, so a replaced binary is never started (least of all elevated).
+   * The verdict is cached per file size + mtime, so a replaced file re-checks.
+   * @returns {Promise<void>}
+   * @throws {WizTreeError} when the signature is missing, invalid, or from another publisher.
+   */
+  async #assertSignature() {
+    if (!this.config.verifySignature) return
+    const info = await stat(this.config.executable).catch(() => undefined)
+    if (info === undefined) {
+      throw new WizTreeError(`WizTree executable not found at ${this.config.executable}.`)
+    }
+    const fingerprint = `${this.config.executable}|${info.size}|${info.mtimeMs}`
+    const cached = signatureVerdicts.get(fingerprint)
+    if (cached !== undefined && cached.ok) return
+    if (cached !== undefined && !cached.ok) throw new WizTreeError(cached.message)
+
+    const verdict = await probeSignature(this.config.executable)
+    const publisher = this.config.signaturePublisher.toLowerCase()
+    const subject = (verdict.subject ?? '').toLowerCase()
+    const ok = verdict.status === 'Valid' && subject.includes(publisher)
+    const message = ok ? '' : [
+      `Refusing to launch ${this.config.executable}: its Authenticode signature is "${verdict.status}"`,
+      verdict.subject === undefined ? 'with no signer certificate.' : `and the signer is "${verdict.subject}".`,
+      `Expected a valid signature from "${this.config.signaturePublisher}".`,
+      'If you intentionally use an unsigned or differently signed WizTree build, set `verifySignature: false`.',
+    ].join(' ')
+
+    if (signatureVerdicts.size >= SIGNATURE_CACHE_LIMIT) signatureVerdicts.clear()
+    signatureVerdicts.set(fingerprint, { ok, message })
+    if (!ok) throw new WizTreeError(message)
+    this.log(`dsh-wiztree: Authenticode signature verified (${verdict.subject})`, 'info')
   }
 
   /**
@@ -330,6 +419,7 @@ export class WizTreeRunner {
    */
   async scan(request) {
     this.assertExecutable()
+    await this.#assertSignature()
     // The CSV is written by an elevated WizTree, so a symlinked or junctioned
     // cache directory would redirect an administrator write outside the temp
     // tree. Refuse instead of following it.

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `verifySignature` / `signaturePublisher`: the configured WizTree executable
+  must carry a valid Authenticode signature from the expected publisher before
+  any (elevated) launch, so a replaced binary is refused rather than run as
+  administrator. Verdicts are cached per file size and mtime.
+- `allowRoots` / `denyRoots`: restrict which drives and folders the model may
+  scan. `allowRoots` is a whitelist (empty means unrestricted); `denyRoots`
+  refuses scan roots at or below the listed paths.
+
 ### Security
 
 - Fixed an argument-injection flaw in the UAC launch path: a `filter`/`exclude`

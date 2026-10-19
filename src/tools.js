@@ -194,6 +194,33 @@ function scopeKey(path, record) {
 }
 
 /**
+ * Enforce the configured `allowRoots` / `denyRoots` against a scan root.
+ * Only the scan root itself is checked: denying a subfolder does not stop a
+ * parent scan from seeing it, so `allowRoots` is the strict control.
+ * @param {string} root - the normalised scan root.
+ * @param {import('./config.js').ResolvedConfig} config - resolved plugin config.
+ * @returns {void}
+ * @throws {Error} when the root is outside `allowRoots` or inside `denyRoots`.
+ */
+export function assertScanScope(root, config) {
+  const key = comparisonKey(root)
+  if (config.allowRoots.length > 0) {
+    const allowed = config.allowRoots.some((entry) => isInside(key, comparisonKey(entry)))
+    if (!allowed) {
+      throw new Error(
+        `path ${root} is outside allowRoots (${config.allowRoots.join(', ')}); `
+        + 'extend `allowRoots` in the plugin config to scan it',
+      )
+    }
+  }
+  for (const entry of config.denyRoots) {
+    if (isInside(key, comparisonKey(entry))) {
+      throw new Error(`path ${root} is forbidden by denyRoots (${entry}) in the plugin config`)
+    }
+  }
+}
+
+/**
  * Walk one CSV export and collect the overview a scan report needs.
  * @param {string} csvPath - the export.
  * @param {string} root - the normalised scan root.
@@ -397,6 +424,7 @@ export function createTools({ config, store, runner, log }) {
         throw new Error(`path is too long; the limit is ${MAX_ARGUMENT_LENGTH} characters`)
       }
       const root = normalizeRoot(requestedPath)
+      assertScanScope(root, config)
       const existenceProbe = /^[A-Za-z]:\\$/.test(root) ? root : root.replace(/\\+$/, '')
       if (!existsSync(existenceProbe)) {
         throw new Error(`Path not found: ${requestedPath}`)

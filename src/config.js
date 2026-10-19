@@ -11,10 +11,14 @@
 
 import { isAbsolute, join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { normalizeRoot } from './format.js'
 
 /** Default WizTree executable. The 64-bit build is preferred: the 32-bit
  * `WizTree.exe` only relaunches `WizTree64.exe` and returns immediately. */
 export const DEFAULT_EXECUTABLE = 'G:\\Wiztree\\WizTree64.exe'
+
+/** The signer subject WizTree's Authenticode signature carries. */
+export const DEFAULT_SIGNATURE_PUBLISHER = 'Antibody Software'
 
 /** Every key this plugin accepts. */
 const KNOWN_KEYS = [
@@ -22,6 +26,10 @@ const KNOWN_KEYS = [
   'timeoutMs',
   'admin',
   'elevation',
+  'verifySignature',
+  'signaturePublisher',
+  'allowRoots',
+  'denyRoots',
   'maxScans',
   'cacheDir',
   'defaultLimit',
@@ -121,12 +129,33 @@ function optionalStringList(raw, key) {
 }
 
 /**
+ * Read an optional list of absolute paths and normalise each entry the same way
+ * a scan root is normalised, so allow/deny comparisons are exact.
+ * @param {Record<string, unknown>} raw - the whole row config.
+ * @param {string} key - the key to read.
+ * @returns {string[]} normalised roots.
+ */
+function optionalPathList(raw, key) {
+  return optionalStringList(raw, key).map((entry) => {
+    try {
+      return normalizeRoot(entry)
+    } catch (error) {
+      throw new ConfigError(`${key} entry ${JSON.stringify(entry)} is not a drive or absolute folder: ${error.message}`)
+    }
+  })
+}
+
+/**
  * The resolved configuration, with every default applied.
  * @typedef {object} ResolvedConfig
  * @property {string} executable - absolute path of the WizTree executable.
  * @property {number} timeoutMs - per-scan deadline for WizTree to finish and write the CSV.
  * @property {boolean} admin - request WizTree's fast MFT scan when the launch is elevated.
  * @property {'auto'|'uac'|'never'} elevation - how to react when Windows refuses a direct launch.
+ * @property {boolean} verifySignature - require a valid Authenticode signature before launching.
+ * @property {string} signaturePublisher - substring the signer subject must contain.
+ * @property {string[]} allowRoots - when non-empty, only these scan roots are accepted.
+ * @property {string[]} denyRoots - scan roots at or below these are refused.
  * @property {number} maxScans - how many scan indexes stay cached at once.
  * @property {string} cacheDir - where scan CSVs are kept.
  * @property {number} defaultLimit - default result count for queries.
@@ -163,6 +192,10 @@ export function resolveConfig(rawConfig) {
     timeoutMs: optionalInteger(raw, 'timeoutMs', 300_000, 10_000, 3_600_000),
     admin: optionalBoolean(raw, 'admin', true),
     elevation: optionalEnum(raw, 'elevation', 'auto', ['auto', 'uac', 'never']),
+    verifySignature: optionalBoolean(raw, 'verifySignature', true),
+    signaturePublisher: optionalString(raw, 'signaturePublisher', DEFAULT_SIGNATURE_PUBLISHER),
+    allowRoots: optionalPathList(raw, 'allowRoots'),
+    denyRoots: optionalPathList(raw, 'denyRoots'),
     maxScans: optionalInteger(raw, 'maxScans', 8, 1, 64),
     cacheDir,
     defaultLimit: optionalInteger(raw, 'defaultLimit', 50, 1, 500),
