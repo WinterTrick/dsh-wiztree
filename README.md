@@ -100,7 +100,7 @@ WizTree 通常在 Windows 兼容性设置里被标记为 `RUNASADMIN`，也就�
 
 ```
 wiztree_scan   { "path": "C:" }
-wiztree_query  { "action": "list", "path": "C:\\Users\\MAXSUN\\AppData\\Local" }
+wiztree_query  { "action": "list", "path": "C:\\Users\\Public" }
 wiztree_query  { "action": "find", "pattern": "*.mp4", "minSize": "100mb" }
 wiztree_query  { "action": "types", "limit": 15 }
 wiztree_query  { "action": "info" }
@@ -150,6 +150,14 @@ description:
 ```
 
 要求：仓库 `package.json` 声明 `dsh.bundle`（本项目已有）、仓库创建满 1 天、添加 `dsh-plugin` topic。发布到 npm 的插件安装体验最好（免构建授权）；也可以把 Release 里的 `https://github.com/<owner>/dsh-wiztree/releases/latest/download/dsh-wiztree.tgz` 填到条目的 `tarball:` 字段。
+
+## 安全与隐私
+
+- **提权行为**：Windows 上 WizTree 常被标记为 `RUNASADMIN`，插件会通过 UAC 以管理员权限启动它。请确认 `executable` 指向你信任的 WizTree 安装路径，且该目录只有管理员可写——如果目录能被普通用户替换，替换后的程序会在你点「是」后以管理员身份运行。
+- **扫描结果会离开本机**：索引摘要和查询结果会作为工具结果发送给所配置的模型服务，其中包含文件路径、文件名和大小。不要让模型扫描你不想上传的目录。
+- **缓存目录**：`cacheDir` 中的 CSV 由提权进程写入。插件会拒绝符号链接/junction 形式的缓存目录，也只会删除自己命名的 `wiz-*.csv`；建议保持默认（用户临时目录）或指向仅当前用户可写的目录。
+- **工具参数**：`path`/`filter`/`exclude` 来自模型，插件已按 Windows `CommandLineToArgvW` 规则精确转义，无法借此注入额外的 WizTree 开关；`extraArgs` 属于受信配置，只应填写你信任的参数。
+- **第三方程序**：插件本身没有运行时依赖、不发起网络请求、不读取凭据；磁盘数据全部来自 WizTree 的 CSV 导出。
 
 ## 限制
 

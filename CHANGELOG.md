@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Fixed an argument-injection flaw in the UAC launch path: a `filter`/`exclude`
+  value containing `\"` could end its argument early and pass extra switches to
+  the elevated WizTree (for example `/treemapimagefile=`). Arguments now follow
+  the exact `CommandLineToArgvW` escaping rules.
+- `ScanStore.init()` now deletes only this plugin's own `wiz-*.csv` files instead
+  of every stale `.csv` in a user-configured `cacheDir`.
+- A symlinked or junctioned `cacheDir` is now refused, so an elevated WizTree
+  cannot be redirected to write outside the intended cache directory.
+- Bound `pattern` length and `list` collection size so a hostile query cannot
+  spend unbounded regex time or memory.
+
 ## [1.0.0] - 2026-10-19
 
 ### Added

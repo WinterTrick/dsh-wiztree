@@ -30,6 +30,12 @@ const MAX_LIMIT = 500
 /** How many rows a large folder/file list accumulates before only counting. */
 const MAX_COLLECTED = 50_000
 
+/** Longest glob a query may pass; bounds the per-entry regex work. */
+const MAX_PATTERN_LENGTH = 512
+
+/** Longest path/filter value accepted; keeps the Windows command line under its limit. */
+const MAX_ARGUMENT_LENGTH = 4096
+
 /** How many entries each scan report section shows. */
 const REPORT_DIRS = 10
 const REPORT_FILES = 15
@@ -387,6 +393,9 @@ export function createTools({ config, store, runner, log }) {
       const args = argumentObject(rawArgs)
       rejectUnknownArguments(args, ['path', 'filter', 'exclude', 'maxDepth', 'admin', 'timeoutMs'])
       const requestedPath = requiredString(args, 'path')
+      if (requestedPath.length > MAX_ARGUMENT_LENGTH) {
+        throw new Error(`path is too long; the limit is ${MAX_ARGUMENT_LENGTH} characters`)
+      }
       const root = normalizeRoot(requestedPath)
       const existenceProbe = /^[A-Za-z]:\\$/.test(root) ? root : root.replace(/\\+$/, '')
       if (!existsSync(existenceProbe)) {
@@ -398,6 +407,11 @@ export function createTools({ config, store, runner, log }) {
       const requestedAdmin = optionalBoolean(args, 'admin') ?? config.admin
       const filter = optionalString(args, 'filter')
       const exclude = optionalString(args, 'exclude')
+      for (const [key, value] of [['filter', filter], ['exclude', exclude]]) {
+        if (value !== undefined && value.length > MAX_ARGUMENT_LENGTH) {
+          throw new Error(`${key} is too long; the limit is ${MAX_ARGUMENT_LENGTH} characters`)
+        }
+      }
       const reservation = store.reserve()
       const outcome = await runner.scan({
         root,
@@ -527,19 +541,31 @@ export function createTools({ config, store, runner, log }) {
       if (action === 'list') {
         /** @type {{ path: string, size: number, isDirectory: boolean }[]} */
         const children = []
+        let total = 0
         for await (const entry of readCsvEntries(record.csvPath, signal)) {
           if (!isDirectChild(comparisonKey(entry.path), scope)) continue
+          total += 1
+          if (children.length >= MAX_COLLECTED) continue
           children.push({ path: entry.path, size: entry.size, isDirectory: entry.isDirectory })
         }
+        const overflowed = total > MAX_COLLECTED
         sortEntries(children, sortBy)
         const shown = children.slice(0, limit)
-        const header = `${scopeLabel} — ${formatCount(children.length)} direct children`
-          + (children.length > shown.length ? `, showing ${shown.length} by ${sortBy}` : '')
-        return { text: renderItems(header, shown, children.length) }
+        const header = `${scopeLabel} — ${formatCount(total)} direct children`
+          + (total > shown.length ? `, showing ${shown.length} by ${sortBy}` : '')
+        const table = renderItems(header, shown, total)
+        return {
+          text: overflowed
+            ? `${table}\n  (only the first ${formatCount(MAX_COLLECTED)} direct children were ranked; narrow the path)`
+            : table,
+        }
       }
 
       if (action === 'find' || action === 'top') {
         const patternText = action === 'top' ? undefined : optionalString(args, 'pattern')
+        if (patternText !== undefined && patternText.length > MAX_PATTERN_LENGTH) {
+          throw new Error(`pattern is too long; the limit is ${MAX_PATTERN_LENGTH} characters`)
+        }
         const matcher = patternText === undefined ? undefined : compileGlob(patternText)
         const extensionText = action === 'top' ? undefined : optionalString(args, 'extension')
         const extensions = extensionText === undefined ? undefined : parseExtensions(extensionText)

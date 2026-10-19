@@ -17,6 +17,13 @@ import { join } from 'node:path'
 const ORPHAN_AGE_MS = 24 * 60 * 60 * 1000
 
 /**
+ * Only files this plugin itself names may ever be deleted from `cacheDir`.
+ * `cacheDir` is user-configurable, so a broad `*.csv` sweep there could destroy
+ * unrelated documents when the directory is pointed somewhere unexpected.
+ */
+const OWN_CSV_PATTERN = /^wiz-\d{8}-\d{6}-[0-9a-f]{4}\.csv$/i
+
+/**
  * @typedef {object} ScanRecord
  * @property {string} id - the scan id.
  * @property {string} root - normalised scan root.
@@ -73,7 +80,7 @@ export class ScanStore {
       await mkdir(this.cacheDir, { recursive: true })
       const entries = await readdir(this.cacheDir, { withFileTypes: true })
       for (const entry of entries) {
-        if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.csv')) continue
+        if (!entry.isFile() || !OWN_CSV_PATTERN.test(entry.name)) continue
         const path = join(this.cacheDir, entry.name)
         const info = await stat(path).catch(() => undefined)
         if (info === undefined || Date.now() - info.mtimeMs > ORPHAN_AGE_MS) {

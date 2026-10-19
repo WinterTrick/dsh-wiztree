@@ -20,7 +20,7 @@
 
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, stat, unlink } from 'node:fs/promises'
+import { lstat, mkdir, stat, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 /** How often the CSV path is polled while WizTree scans. */
@@ -98,23 +98,35 @@ function quotePowerShell(value) {
 }
 
 /**
- * Quote one argument for a Windows command line, using the
- * `CommandLineToArgvW` rules `CreateProcess` applies: quote when the value
- * contains whitespace or a quote, escape inner quotes, and double a trailing
- * run of backslashes so it cannot escape the closing quote.
+ * Quote one argument for a Windows command line using the exact
+ * `CommandLineToArgvW` algorithm: a run of `n` backslashes before a `"` becomes
+ * `2n + 1` backslashes (a literal backslash plus the quote toggle), and a
+ * trailing run of `n` backslashes becomes `2n`. Getting this wrong lets a value
+ * such as `x\" /treemapimagefile=...` end its argument early and inject extra
+ * WizTree switches into the elevated launch.
  * @param {string} value - the raw argument.
  * @returns {string} the argument, quoted only when needed.
  */
 function quoteWindowsArgument(value) {
   if (value === '') return '""'
   if (!/[\s"]/.test(value)) return value
-  let escaped = value.replace(/"/g, '\\"')
-  const trailingBackslashes = /\\+$/.exec(escaped)?.[0] ?? ''
-  if (trailingBackslashes !== '') {
-    escaped = escaped.slice(0, escaped.length - trailingBackslashes.length)
-      + trailingBackslashes.repeat(2)
+  let quoted = '"'
+  let backslashes = 0
+  for (const character of value) {
+    if (character === '\\') {
+      backslashes += 1
+      continue
+    }
+    if (character === '"') {
+      quoted += `${'\\'.repeat(backslashes * 2 + 1)}"`
+      backslashes = 0
+      continue
+    }
+    quoted += `${'\\'.repeat(backslashes)}${character}`
+    backslashes = 0
   }
-  return `"${escaped}"`
+  quoted += `${'\\'.repeat(backslashes * 2)}"`
+  return quoted
 }
 
 /**
@@ -318,6 +330,16 @@ export class WizTreeRunner {
    */
   async scan(request) {
     this.assertExecutable()
+    // The CSV is written by an elevated WizTree, so a symlinked or junctioned
+    // cache directory would redirect an administrator write outside the temp
+    // tree. Refuse instead of following it.
+    const cacheInfo = await lstat(this.config.cacheDir).catch(() => undefined)
+    if (cacheInfo !== undefined && cacheInfo.isSymbolicLink()) {
+      throw new WizTreeError(
+        `Cache directory ${this.config.cacheDir} is a symbolic link or junction; `
+        + 'refusing to let an elevated WizTree write through it. Point `cacheDir` at a real directory.',
+      )
+    }
     await mkdir(dirname(request.csvPath), { recursive: true })
     await unlink(request.csvPath).catch(() => {})
 
