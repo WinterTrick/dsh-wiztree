@@ -1,0 +1,55 @@
+{
+  "name": "dsh-wiztree",
+  "version": "1.0.0",
+  "description": "WizTree disk-usage indexing for DeepSeek Harness agents: scan a drive or folder in seconds, then query the cached index.",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "src/*.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "wiztree",
+    "disk-usage",
+    "disk-space",
+    "windows"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WinterTrick/dsh-wiztree.git"
+  },
+  "homepage": "https://github.com/WinterTrick/dsh-wiztree#readme",
+  "bugs": {
+    "url": "https://github.com/WinterTrick/dsh-wiztree/issues"
+  },
+  "engines": {
+    "node": ">=22.19.0",
+    "dsh": ">=0.2.1-rc.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "check": "node scripts/check.mjs",
+    "prepack": "npm run check"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+pnpm-lock.yaml
+
+# Packed artifacts
+*.tgz
+npm-debug.log*
+
+# Editors and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local caches and scan output
+*.csv
+.tmp/

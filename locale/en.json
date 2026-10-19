@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "WizTree Disk Index",
+    "description": "Indexes drives and folders with WizTree so the agent can inspect disk usage instantly."
+  }
+}

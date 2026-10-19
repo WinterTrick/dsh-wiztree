@@ -1,0 +1,162 @@
+# dsh-wiztree
+
+让 DeepSeek Harness 智能体调用 [WizTree](https://diskanalyzer.com/) 的**命令行 CSV 导出**能力，秒级建立磁盘/文件夹索引，然后按需查询——无需让模型递归遍历文件系统。
+
+> 实测：C 盘全盘（53 万文件 / 140 GB）扫描 **7.8 秒**，之后所有查询都在缓存的索引上进行。
+
+## 工具
+
+| 工具 | 作用 |
+| --- | --- |
+| `wiztree_scan` | 用 WizTree 扫描指定盘符或文件夹，生成索引（CSV），返回最大的文件夹、最大的文件、按扩展名统计的占用 |
+| `wiztree_query` | 在已缓存的索引上查询：`list` 列目录、`find` 按名字/大小/扩展名找文件、`top` 找最大文件、`types` 按类型统计、`info` 查看索引信息 |
+
+## 安装
+
+需要 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 0.2.1 或更新版本，以及本机安装的 WizTree（默认路径 `G:\Wiztree\WizTree64.exe`）。
+
+### 从 npm 安装
+
+```sh
+dsh plugin --profile desktop add dsh-wiztree
+```
+
+或者在会话里让智能体执行：
+
+```
+plugin_manager { action: "install_bundle", target: "dsh-wiztree" }
+```
+
+### 直接从 GitHub 安装
+
+```sh
+dsh plugin --profile desktop add https://github.com/WinterTrick/dsh-wiztree
+```
+
+或：
+
+```
+plugin_manager { action: "install_bundle", target: "https://github.com/WinterTrick/dsh-wiztree" }
+```
+
+### 从 GitHub Release 安装
+
+```sh
+# 始终指向最新 Release 的固定文件名（推荐）
+dsh plugin --profile desktop add https://github.com/WinterTrick/dsh-wiztree/releases/latest/download/dsh-wiztree.tgz
+
+# 或钉住某个版本
+dsh plugin --profile desktop add https://github.com/WinterTrick/dsh-wiztree/releases/download/v1.0.0/dsh-wiztree-1.0.0.tgz
+```
+
+### 从本地目录安装（开发调试）
+
+```
+plugin_manager { action: "install_bundle", target: "D:\\path\\to\\dsh-wiztree" }
+```
+
+安装后无需重启，工具会直接出现在会话中。
+
+## 提权说明（重要）
+
+WizTree 通常在 Windows 兼容性设置里被标记为 `RUNASADMIN`，也就是**普通进程直接启动它会被拒绝**（`EACCES` / 错误 740）。插件按以下顺序处理：
+
+1. **DSH 以管理员身份运行** → 直接启动，无 UAC 弹窗，且启用 WizTree 的 MFT 快速扫描。推荐。
+2. **DSH 普通权限运行**（`elevation: auto`，默认）→ 先尝试直连；被拒后通过 `Start-Process -Verb RunAs` 拉起 UAC。用户点一次「是」后，WizTree 以管理员权限运行，同样可用 MFT 扫描。每次扫描都需要确认一次。
+3. `elevation: never` → 不弹 UAC，直接启动；在 `RUNASADMIN` 标记下通常会失败并给出提示。
+
+想完全免弹窗，请以管理员身份重启 DSH。也可以手动取消 WizTree 的「以管理员身份运行此程序」兼容性勾选，此后插件走标准扫描（无需提权，但全盘较慢）。
+
+## 配置
+
+配置位于 `cordis.patch.yml` 的 `wiztree` 行，可在用户自己的 patch 层覆盖：
+
+```yaml
+- id: wiztree
+  name: dsh-wiztree
+  config:
+    executable: 'G:\Wiztree\WizTree64.exe'
+    elevation: auto
+    admin: true
+    timeoutMs: 300000
+    maxScans: 8
+    defaultLimit: 50
+    maxExportDepth: 0
+```
+
+| 键 | 默认值 | 说明 |
+| --- | --- | --- |
+| `executable` | `G:\Wiztree\WizTree64.exe` | WizTree 可执行文件。请用 64 位版本：32 位 `WizTree.exe` 只是转交给 64 位进程后立即返回。 |
+| `elevation` | `auto` | `auto`：直接启动被拒时用 UAC 重试；`uac`：非提权时总是走 UAC；`never`：从不提权。 |
+| `admin` | `true` | 请求 WizTree 的 MFT 快速扫描（仅在实际以管理员权限运行时生效）。 |
+| `timeoutMs` | `300000` | 单次扫描（含等待 CSV 写入完成）的超时，毫秒。 |
+| `maxScans` | `8` | 同时保留的索引数，超出后最旧的索引及其 CSV 会被删除。 |
+| `defaultLimit` | `50` | 查询默认返回条数（最大 500）。 |
+| `maxExportDepth` | `0` | WizTree `/exportmaxdepth`，0 表示不限制。 |
+| `cacheDir` | `<系统临时目录>\dsh-wiztree` | 索引 CSV 的存放目录（绝对路径）。 |
+| `extraArgs` | `[]` | 追加到每次扫描命令行的原始参数。 |
+
+## 使用
+
+```
+wiztree_scan   { "path": "C:" }
+wiztree_query  { "action": "list", "path": "C:\\Users\\MAXSUN\\AppData\\Local" }
+wiztree_query  { "action": "find", "pattern": "*.mp4", "minSize": "100mb" }
+wiztree_query  { "action": "types", "limit": 15 }
+wiztree_query  { "action": "info" }
+```
+
+## 开发
+
+纯 ESM，无依赖、无构建步骤。Node.js 22.19+。
+
+```sh
+npm run check      # 校验清单、补丁、JS 语法、locale/icon、files 列表
+npm pack           # 生成 dsh-wiztree-<version>.tgz（prepack 会再跑一次 check）
+npm pack --dry-run # 只看将要打包的文件
+```
+
+项目结构：
+
+- `index.js` — Host 插件入口，注册工具
+- `src/config.js` — 配置校验与默认值
+- `src/runner.js` — 调用 WizTree（直连 / UAC 提权）、等待 CSV 完成、超时/取消
+- `src/csv.js` — WizTree CSV 流式解析（UTF-8 / GBK）
+- `src/store.js` — 索引缓存与 CSV 生命周期
+- `src/tools.js` — 两个工具的定义、统计与格式化
+- `src/format.js` — 大小/路径/glob 辅助
+- `scripts/check.mjs` — 发布前校验
+- `locale/*.json`、`icon.svg` — Plugin Manager 中显示的标题、描述与图标
+
+## 发布
+
+1. 更新 `package.json` 的 `version`，并在 `CHANGELOG.md` 写下该版本条目。
+2. `npm run check && npm pack --dry-run` 确认产物。
+3. 提交并打 tag：`git tag v1.0.0 && git push origin main --tags`。
+4. `.github/workflows/release.yml` 会校验、打包、创建 GitHub Release；若仓库配置了 `NPM_TOKEN` secret，还会自动发布到 npm。
+5. 可选：收录到 DSH 插件市场，见下。
+
+### 收录到 DSH 插件市场
+
+发布后向 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) 提 PR，新增一个 `data/plugins/<owner>__<repo>.yml`：
+
+```yaml
+url: https://github.com/<owner>/dsh-wiztree
+name: <owner>/dsh-wiztree
+category: tools
+description:
+  en: Index a Windows drive or folder with WizTree and answer disk-usage questions from the cached index.
+  zh: 调用 WizTree 索引 Windows 磁盘或文件夹，并在缓存索引上查询磁盘占用。
+```
+
+要求：仓库 `package.json` 声明 `dsh.bundle`（本项目已有）、仓库创建满 1 天、添加 `dsh-plugin` topic。发布到 npm 的插件安装体验最好（免构建授权）；也可以把 Release 里的 `https://github.com/<owner>/dsh-wiztree/releases/latest/download/dsh-wiztree.tgz` 填到条目的 `tarball:` 字段。
+
+## 限制
+
+- 仅 Windows。
+- 扫描时 WizTree 窗口会短暂出现；写出 CSV 后自动退出。UAC 模式下一次扫描需要点一次确认。
+- 索引保存在 Host 进程内存中，DSH 重启后需要重新扫描；CSV 文件在缓存目录中最多保留一天。
+
+## License
+
+[MIT](LICENSE)

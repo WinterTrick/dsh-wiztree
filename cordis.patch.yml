@@ -1,0 +1,14 @@
+# Bundle patch layer. The row activates the package's main entry as a plain
+# Cordis Host plugin; every tunable lives in `config` so the user's own patch
+# layer can override it without touching this package.
+- insert:
+    - id: wiztree
+      name: dsh-wiztree
+      config:
+        executable: 'G:\Wiztree\WizTree64.exe'
+        # WizTree carries the Windows compatibility setting RUNASADMIN on this
+        # machine, so a plain CreateProcess is refused. "auto" retries through
+        # a UAC prompt. Start DSH as administrator to remove the prompt (and
+        # unlock the fast MFT scan) or set this to "never".
+        elevation: auto
+        admin: true
